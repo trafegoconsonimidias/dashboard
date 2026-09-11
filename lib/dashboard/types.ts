@@ -44,19 +44,30 @@ export type SheetDynamicMetric = {
   aggregation: SheetMetricAggregation
 }
 
-export type DashboardSource = {
+export type SheetRangeSource = {
+  sheetId: string
+  sheetName: string | null
+  rangeA1: string
+}
+
+export type DashboardSheetSource = SheetRangeSource & {
+  id: string
+  name: string
+  type: string
+  mapper: string | null
+}
+
+export type DashboardSource = SheetRangeSource & {
   id: string
   clientId: string
   clientName: string
   clientSlug: string
   role: DashboardRole
   title: string
-  sheetId: string
-  sheetName: string | null
-  rangeA1: string
   refreshSeconds: number
   mode: DashboardMode
   tileConfig: MetricTileOverride[]
+  sheets: DashboardSheetSource[]
 }
 
 export type DashboardListItem = {
@@ -84,7 +95,7 @@ export type DashboardAccessState = {
   notices: string[]
 }
 
-export type SheetTransport = "google-api" | "public-csv" | "sample"
+export type SheetTransport = "google-api" | "public-csv" | "sample" | "mixed"
 
 export type SheetFetchResult = {
   values: unknown[][]
@@ -145,6 +156,18 @@ export type DashboardModel = {
   }
 }
 
+export type DashboardSheetStatus = {
+  id: string
+  name: string
+  type: string
+  mapper: string | null
+  transport: SheetTransport
+  sourceLabel: string
+  rowCount: number
+  headerRowIndex: number
+  unidentifiedColumns: string[]
+}
+
 export type DashboardSnapshot = {
   status: "ready" | "needs-configuration" | "error"
   fetchedAt: string
@@ -156,6 +179,7 @@ export type DashboardSnapshot = {
     headerRowIndex: number
     unidentifiedColumns: string[]
     dynamicMetrics: SheetDynamicMetric[]
+    sources: DashboardSheetStatus[]
   }
   transform: SheetTransformResult
   model: DashboardModel

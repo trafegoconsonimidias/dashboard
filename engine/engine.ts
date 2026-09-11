@@ -71,7 +71,7 @@ export interface ColumnMapping {
   source: string;
   target: CanonicalField | null;
   confidence: number;
-  method: "exact" | "normalized" | "fuzzy" | "unmapped";
+  method: "exact" | "normalized" | "fuzzy" | "mapper" | "unmapped";
   inferredType: FieldType | "unknown";
 }
 
@@ -199,6 +199,12 @@ export interface TransformOptions {
    * Default: true
    */
   deriveMetrics?: boolean;
+
+  /**
+   * Mapeamentos explícitos de cabeçalhos para campos canônicos.
+   * Útil quando uma planilha usa nomes próprios ou inconsistentes.
+   */
+  fieldAliases?: Record<string, CanonicalField>;
 }
 
 export const FIELD_REGISTRY: FieldDefinition[] = [
@@ -744,6 +750,17 @@ export function normalizeHeader(value: unknown): string {
     .trim();
 }
 
+function normalizeFieldAliases(
+  aliases: Record<string, CanonicalField>
+): Record<string, CanonicalField> {
+  return Object.fromEntries(
+    Object.entries(aliases).map(([source, target]) => [
+      normalizeHeader(source),
+      target,
+    ])
+  );
+}
+
 function tokenize(value: string): Set<string> {
   return new Set(
     normalizeHeader(value)
@@ -781,9 +798,19 @@ function tokenSimilarity(a: string, b: string): number {
 
 function matchHeader(
   sourceHeader: string,
-  fuzzyThreshold: number
+  fuzzyThreshold: number,
+  fieldAliases: Record<string, CanonicalField>
 ): Omit<ColumnMapping, "columnIndex" | "source" | "inferredType"> {
   const normalizedSource = normalizeHeader(sourceHeader);
+  const mappedField = fieldAliases[normalizedSource];
+
+  if (mappedField && findDefinition(mappedField)) {
+    return {
+      target: mappedField,
+      confidence: 1,
+      method: "mapper",
+    };
+  }
 
   if (!normalizedSource) {
     return {
@@ -1175,7 +1202,7 @@ function detectHeaderRow(
     for (const cell of row) {
       if (isEmpty(cell)) continue;
 
-      const match = matchHeader(String(cell), fuzzyThreshold);
+      const match = matchHeader(String(cell), fuzzyThreshold, {});
 
       if (match.target) {
         score += match.confidence;
@@ -1198,10 +1225,11 @@ function detectHeaderRow(
 function buildMappings(
   headers: string[],
   dataRows: unknown[][],
-  fuzzyThreshold: number
+  fuzzyThreshold: number,
+  fieldAliases: Record<string, CanonicalField>
 ): ColumnMapping[] {
   const preliminary = headers.map((source, columnIndex) => {
-    const match = matchHeader(source, fuzzyThreshold);
+    const match = matchHeader(source, fuzzyThreshold, fieldAliases);
     const columnValues = dataRows.map((row) => row?.[columnIndex]);
 
     return {
@@ -1303,7 +1331,7 @@ function sumField(
   return hasValue ? total : undefined;
 }
 
-function buildSummary(rows: CanonicalRow[]): SheetSummary {
+export function buildSheetSummary(rows: CanonicalRow[]): SheetSummary {
   const summary: SheetSummary = {
     rowCount: rows.length,
   };
@@ -1362,6 +1390,7 @@ export function transformSheet(
     fuzzyThreshold = 0.78,
     keepUnmapped = true,
     deriveMetrics = true,
+    fieldAliases = {},
   } = options;
 
   if (!Array.isArray(matrix) || matrix.length === 0) {
@@ -1397,7 +1426,8 @@ export function transformSheet(
   const mappings = buildMappings(
     headers,
     dataRows,
-    fuzzyThreshold
+    fuzzyThreshold,
+    normalizeFieldAliases(fieldAliases)
   );
 
   const rows = dataRows.map((rawRow) =>
@@ -1418,7 +1448,7 @@ export function transformSheet(
       .filter((mapping) => mapping.target === null)
       .map((mapping) => mapping.source),
     rows,
-    summary: buildSummary(rows),
+    summary: buildSheetSummary(rows),
   };
 }
 
@@ -1486,3 +1516,6 @@ export function transformObjectRows(
  *
  * const json = transformSheet(values);
  */
+
+
+

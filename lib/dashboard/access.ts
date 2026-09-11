@@ -1,3 +1,7 @@
+import {
+  getMasterDashboardAccess,
+  hasMasterDashboardConfig,
+} from "@/lib/dashboard/master-config"
 import { normalizeMetricTileConfig } from "@/lib/dashboard/metric-tiles"
 import type {
   DashboardAccessState,
@@ -16,6 +20,26 @@ export class DashboardAccessError extends Error {
 export async function getDashboardAccess(
   preferredSlug?: string
 ): Promise<DashboardAccessState> {
+  if (hasMasterDashboardConfig()) {
+    return getMasterDashboardAccess(preferredSlug)
+  }
+
+  return getSingleSheetDashboardAccess(preferredSlug)
+}
+
+export async function getStrictDashboardSource(clientSlug: string) {
+  const access = await getDashboardAccess(clientSlug)
+
+  if (!access.activeSource) {
+    throw new DashboardAccessError(404, "Dashboard não encontrado.")
+  }
+
+  return access.activeSource
+}
+
+function getSingleSheetDashboardAccess(
+  preferredSlug?: string
+): DashboardAccessState {
   const source = getSheetDashboardSource()
   const activeSource =
     !preferredSlug || preferredSlug === source.clientSlug ? source : null
@@ -44,36 +68,41 @@ export async function getDashboardAccess(
   }
 }
 
-export async function getStrictDashboardSource(clientSlug: string) {
-  const source = getSheetDashboardSource()
-
-  if (source.clientSlug !== clientSlug) {
-    throw new DashboardAccessError(404, "Dashboard não encontrado.")
-  }
-
-  return source
-}
-
 function getSheetDashboardSource(): DashboardSource {
   const refreshSeconds = clampRefreshSeconds(
     Number.parseInt(process.env.DASHBOARD_REFRESH_SECONDS ?? "15", 10)
   )
+  const clientName = process.env.DASHBOARD_CLIENT_NAME ?? "Google Sheets"
+  const sheetId = process.env.GOOGLE_SHEETS_ID ?? ""
+  const sheetName = process.env.GOOGLE_SHEETS_SHEET_NAME ?? null
+  const rangeA1 = process.env.GOOGLE_SHEETS_RANGE ?? "A:Z"
 
   return {
     id: process.env.DASHBOARD_CLIENT_SLUG ?? "planilha",
     clientId: process.env.DASHBOARD_CLIENT_ID ?? "sheet-dashboard",
-    clientName: process.env.DASHBOARD_CLIENT_NAME ?? "Google Sheets",
+    clientName,
     clientSlug: process.env.DASHBOARD_CLIENT_SLUG ?? "planilha",
     role: "viewer",
     title: process.env.DASHBOARD_TITLE ?? "Dashboard da Planilha",
-    sheetId: process.env.GOOGLE_SHEETS_ID ?? "",
-    sheetName: process.env.GOOGLE_SHEETS_SHEET_NAME ?? null,
-    rangeA1: process.env.GOOGLE_SHEETS_RANGE ?? "A:Z",
+    sheetId,
+    sheetName,
+    rangeA1,
     refreshSeconds,
     mode: "sheet",
     tileConfig: normalizeMetricTileConfig(
       parseJsonEnv(process.env.DASHBOARD_TILE_CONFIG)
     ),
+    sheets: [
+      {
+        id: "primary",
+        name: clientName,
+        sheetId,
+        sheetName,
+        rangeA1,
+        type: process.env.DASHBOARD_SHEET_TYPE ?? "sheet",
+        mapper: process.env.DASHBOARD_MAPPER?.trim() || null,
+      },
+    ],
   }
 }
 
@@ -96,3 +125,4 @@ function parseJsonEnv(value: string | undefined) {
     return []
   }
 }
+

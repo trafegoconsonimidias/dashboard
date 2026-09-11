@@ -1,11 +1,15 @@
 import { createSign } from "node:crypto"
 
-import type { DashboardSource, SheetFetchResult } from "@/lib/dashboard/types"
+import type { SheetFetchResult, SheetRangeSource } from "@/lib/dashboard/types"
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
 
 let tokenCache: { accessToken: string; expiresAt: number } | null = null
+let serviceAccountJsonCache:
+  | { client_email?: string; private_key?: string }
+  | null
+  | undefined
 
 const SAMPLE_SHEET_VALUES: unknown[][] = [
   [
@@ -151,7 +155,7 @@ const SAMPLE_SHEET_VALUES: unknown[][] = [
 ]
 
 export async function fetchSheetValues(
-  source: DashboardSource
+  source: SheetRangeSource
 ): Promise<SheetFetchResult> {
   if (!source.sheetId) {
     return {
@@ -169,7 +173,7 @@ export async function fetchSheetValues(
 }
 
 async function fetchGoogleApiValues(
-  source: DashboardSource
+  source: SheetRangeSource
 ): Promise<SheetFetchResult> {
   const range = source.sheetName
     ? `${source.sheetName}!${source.rangeA1}`
@@ -213,7 +217,7 @@ async function fetchGoogleApiValues(
 }
 
 async function fetchPublishedCsvValues(
-  source: DashboardSource
+  source: SheetRangeSource
 ): Promise<SheetFetchResult> {
   const url = new URL(
     `https://docs.google.com/spreadsheets/d/${encodeURIComponent(
@@ -326,15 +330,69 @@ function encodeBase64Url(value: string) {
 }
 
 function getServiceAccountEmail() {
-  return process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? process.env.GOOGLE_CLIENT_EMAIL
+  return (
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ??
+    process.env.GOOGLE_CLIENT_EMAIL ??
+    getServiceAccountJson()?.client_email
+  )
 }
 
 function getServiceAccountPrivateKey() {
   return (
     process.env.GOOGLE_PRIVATE_KEY ??
     process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY ??
+    getServiceAccountJson()?.private_key ??
     ""
   ).replace(/\\n/g, "\n")
+}
+
+function getServiceAccountJson() {
+  if (serviceAccountJsonCache !== undefined) {
+    return serviceAccountJsonCache
+  }
+
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()
+
+  if (!raw) {
+    serviceAccountJsonCache = null
+    return serviceAccountJsonCache
+  }
+
+  const candidates = [raw, decodeBase64Json(raw)].filter(
+    (candidate): candidate is string => Boolean(candidate)
+  )
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as {
+        client_email?: unknown
+        private_key?: unknown
+      }
+
+      serviceAccountJsonCache = {
+        client_email:
+          typeof parsed.client_email === "string" ? parsed.client_email : undefined,
+        private_key:
+          typeof parsed.private_key === "string" ? parsed.private_key : undefined,
+      }
+
+      return serviceAccountJsonCache
+    } catch {
+      // Tenta o próximo formato aceito.
+    }
+  }
+
+  serviceAccountJsonCache = null
+  return serviceAccountJsonCache
+}
+
+function decodeBase64Json(raw: string) {
+  try {
+    const decoded = Buffer.from(raw, "base64").toString("utf8").trim()
+    return decoded.startsWith("{") ? decoded : null
+  } catch {
+    return null
+  }
 }
 
 async function readGoogleError(response: Response) {
@@ -411,3 +469,6 @@ function parseCsv(input: string) {
     currentRow.some((value) => value.trim() !== "")
   )
 }
+
+
+
