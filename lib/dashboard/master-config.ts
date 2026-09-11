@@ -9,9 +9,10 @@ import type {
   SheetRangeSource,
 } from "@/lib/dashboard/types"
 
+const DEFAULT_MASTER_CONFIG_RANGE = "A:Z"
 const DEFAULT_CLIENTS_RANGE = "CLIENTES!A:Z"
 const DEFAULT_SHEETS_RANGE = "PLANILHAS!A:Z"
-const DEFAULT_MASTER_TEST_RANGE = "A:B"
+const DEFAULT_MASTER_TEST_RANGE = "A:Z"
 const DEFAULT_DATA_RANGE = "A:Z"
 
 type MasterClient = {
@@ -86,6 +87,18 @@ export async function readMasterSheetPreview() {
 
 async function readMasterDashboardConfig() {
   const masterSheetId = getMasterSheetId()
+  const unifiedResult = await fetchSheetValues(
+    buildSheetRangeSource(
+      masterSheetId,
+      process.env.MASTER_CONFIG_RANGE ?? DEFAULT_MASTER_CONFIG_RANGE
+    )
+  )
+  const unifiedConfig = parseUnifiedConfig(unifiedResult.values)
+
+  if (unifiedConfig.clients.length && unifiedConfig.sheets.length) {
+    return unifiedConfig
+  }
+
   const [clientsResult, sheetsResult] = await Promise.all([
     fetchSheetValues(
       buildSheetRangeSource(
@@ -139,6 +152,104 @@ function buildDashboardSource(
   }
 }
 
+function parseUnifiedConfig(values: unknown[][]) {
+  const records = tableToRecords(values)
+  const clientsById = new Map<string, MasterClient>()
+  const sheets: MasterSheet[] = []
+
+  records.forEach((record, index) => {
+    const clientId = readRecordValue(record, [
+      "client_id",
+      "id_cliente",
+      "cliente_id",
+      "id",
+    ])
+    const sheetId = readRecordValue(record, [
+      "sheet_id",
+      "id_planilha",
+      "planilha_id",
+      "spreadsheet_id",
+    ])
+
+    if (!clientId || !sheetId) {
+      return
+    }
+
+    if (!clientsById.has(clientId)) {
+      const accessId = readRecordValue(record, [
+        "access_id",
+        "access",
+        "token",
+        "slug",
+        "link",
+      ])
+      const name =
+        readRecordValue(record, [
+          "name_cliente",
+          "nome_cliente",
+          "nome",
+          "name",
+          "cliente",
+          "client_name",
+        ]) ?? clientId
+
+      clientsById.set(clientId, {
+        clientId,
+        name,
+        accessId: accessId ?? clientId,
+        active: isRecordActive(record),
+        title: readRecordValue(record, ["title", "titulo", "título"]),
+        refreshSeconds: parseOptionalInteger(
+          readRecordValue(record, [
+            "refresh_seconds",
+            "refresh",
+            "atualizacao",
+            "atualização",
+          ])
+        ),
+        tileConfig: normalizeOptionalTileConfig(
+          readRecordValue(record, ["tile_config", "metricas", "métricas"])
+        ),
+      })
+    }
+
+    const name =
+      readRecordValue(record, [
+        "name_planilha",
+        "nome_planilha",
+        "nome",
+        "name",
+        "planilha",
+      ]) ?? `Planilha ${index + 1}`
+    const type = readRecordValue(record, ["tipo", "type"]) ?? "sheet"
+    const rangeDescriptor =
+      readRecordValue(record, ["range", "range_a1", "intervalo"]) ??
+      DEFAULT_DATA_RANGE
+    const parsedRange = parseSheetRange(rangeDescriptor)
+    const explicitSheetName = readRecordValue(record, [
+      "sheet_name",
+      "aba",
+      "tab",
+    ])
+
+    sheets.push({
+      id: `${clientId}:${slugify(`${type}-${name}-${index + 1}`)}`,
+      clientId,
+      name,
+      sheetId,
+      sheetName: explicitSheetName ?? parsedRange.sheetName,
+      rangeA1: parsedRange.rangeA1,
+      type,
+      mapper: readRecordValue(record, ["mapper", "mapeador"]),
+      active: isRecordActive(record),
+    })
+  })
+
+  return {
+    clients: Array.from(clientsById.values()),
+    sheets,
+  }
+}
 function parseClients(values: unknown[][]): MasterClient[] {
   return tableToRecords(values)
     .map((record): MasterClient | null => {
@@ -156,7 +267,7 @@ function parseClients(values: unknown[][]): MasterClient[] {
         "link",
       ])
       const name =
-        readRecordValue(record, ["nome", "name", "cliente", "client_name"]) ??
+        readRecordValue(record, ["name_cliente", "nome_cliente", "nome", "name", "cliente", "client_name"]) ??
         clientId
 
       if (!clientId || !accessId || !name) {
@@ -205,7 +316,7 @@ function parseSheets(values: unknown[][]): MasterSheet[] {
       }
 
       const name =
-        readRecordValue(record, ["nome", "name", "planilha"]) ??
+        readRecordValue(record, ["name_planilha", "nome_planilha", "nome", "name", "planilha"]) ??
         `Planilha ${index + 1}`
       const type = readRecordValue(record, ["tipo", "type"]) ?? "sheet"
       const rangeDescriptor =
@@ -417,3 +528,5 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
 }
+
+
