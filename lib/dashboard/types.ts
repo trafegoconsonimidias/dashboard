@@ -55,6 +55,7 @@ export type DashboardSheetSource = SheetRangeSource & {
   name: string
   type: string
   mapper: string | null
+  role?: "media" | "leads"
 }
 
 export type DashboardSource = SheetRangeSource & {

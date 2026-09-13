@@ -14,6 +14,18 @@ const DEFAULT_CLIENTS_RANGE = "CLIENTES!A:Z"
 const DEFAULT_SHEETS_RANGE = "PLANILHAS!A:Z"
 const DEFAULT_MASTER_TEST_RANGE = "A:Z"
 const DEFAULT_DATA_RANGE = "A:Z"
+const DEFAULT_MEDIA_TAB = process.env.DASHBOARD_MEDIA_SHEET_NAME ?? "Meta Extract"
+const DEFAULT_MEDIA_FALLBACK_TAB = process.env.DASHBOARD_MEDIA_FALLBACK_SHEET_NAME ?? "Stract"
+const DEFAULT_LEADS_TAB = process.env.DASHBOARD_LEADS_SHEET_NAME ?? "Leads"
+
+const FORM_CAMPAIGN_TILE_CONFIG: MetricTileOverride[] = [
+  { field: "spend", label: "Investimento", variant: "finance" },
+  { field: "impressions", label: "Impressões", variant: "traffic" },
+  { field: "cpm", label: "CPM", variant: "performance" },
+  { field: "ctr", label: "CTR", variant: "traffic" },
+  { field: "leads", label: "E-mail", variant: "conversion" },
+  { field: "cpl", label: "CPL", variant: "performance" },
+]
 
 type MasterClient = {
   clientId: string
@@ -47,25 +59,33 @@ export async function getMasterDashboardAccess(
   const client = config.clients.find(
     (candidate) => candidate.accessId === normalizedAccessId && candidate.active
   )
+  const sourceClient = client ?? config.clients.find((candidate) =>
+    candidate.active &&
+    candidate.accessId === normalizedAccessId.split("--")[0]
+  )
 
-  if (!client) {
+  if (!sourceClient) {
     return emptyMasterAccessState("Dashboard não encontrado ou cliente inativo.")
   }
 
-  const source = buildDashboardSource(client, config.sheets)
-  const notices = source.sheets.length
+  const sources = buildDashboardSources(sourceClient, config.sheets)
+  const source =
+    sources.find((candidate) => candidate.clientSlug === normalizedAccessId) ??
+    sources[0] ??
+    buildEmptyDashboardSource(sourceClient)
+  const notices = sources.length
     ? []
-    : [`${source.clientName} não tem planilhas ativas na aba PLANILHAS.`]
+    : [`${sourceClient.name} não tem planilhas ativas na aba PLANILHAS.`]
 
   return {
     status: "ready",
     viewer: {
-      id: `viewer-${source.clientId}`,
-      name: source.clientName,
+      id: `viewer-${sourceClient.clientId}`,
+      name: sourceClient.name,
       email: "Acesso por link privado",
       mode: "sheet",
     },
-    dashboards: [toDashboardListItem(source)],
+    dashboards: sources.map(toDashboardListItem),
     activeSource: source,
     notices,
   }
@@ -120,19 +140,46 @@ async function readMasterDashboardConfig() {
   }
 }
 
-function buildDashboardSource(
+function buildDashboardSources(
   client: MasterClient,
   sheets: MasterSheet[]
+): DashboardSource[] {
+  return sheets
+    .filter((sheet) => sheet.active && sheet.clientId === client.clientId)
+    .map((sheet, index) => buildDashboardSource(client, sheet, index))
+}
+
+function buildDashboardSource(
+  client: MasterClient,
+  sheet: MasterSheet,
+  index: number
 ): DashboardSource {
-  const activeSheets = sheets.filter(
-    (sheet) => sheet.active && sheet.clientId === client.clientId
-  )
-  const firstSheet = activeSheets[0]
   const refreshSeconds = clampRefreshSeconds(
     client.refreshSeconds ??
       Number.parseInt(process.env.DASHBOARD_REFRESH_SECONDS ?? "15", 10)
   )
+  const dashboardSheets = expandDashboardSheet(sheet)
+  const firstSheet = dashboardSheets[0] ?? sheet
+  const sheetSlug = slugify(sheet.name || sheet.id || `planilha-${index + 1}`)
 
+  return {
+    id: sheet.id,
+    clientId: client.clientId,
+    clientName: client.name,
+    clientSlug: `${client.accessId}--${sheetSlug || index + 1}`,
+    role: "viewer",
+    title: client.title ? `${client.title} - ${sheet.name}` : `Dashboard ${sheet.name}`,
+    sheetId: firstSheet.sheetId,
+    sheetName: firstSheet.sheetName,
+    rangeA1: firstSheet.rangeA1,
+    refreshSeconds,
+    mode: "sheet",
+    tileConfig: client.tileConfig ?? getDefaultTileConfig(),
+    sheets: dashboardSheets,
+  }
+}
+
+function buildEmptyDashboardSource(client: MasterClient): DashboardSource {
   return {
     id: client.clientId,
     clientId: client.clientId,
@@ -140,16 +187,61 @@ function buildDashboardSource(
     clientSlug: client.accessId,
     role: "viewer",
     title: client.title ?? `Dashboard ${client.name}`,
-    sheetId: firstSheet?.sheetId ?? "",
-    sheetName: firstSheet?.sheetName ?? null,
-    rangeA1: firstSheet?.rangeA1 ?? DEFAULT_DATA_RANGE,
-    refreshSeconds,
+    sheetId: "",
+    sheetName: null,
+    rangeA1: DEFAULT_DATA_RANGE,
+    refreshSeconds: clampRefreshSeconds(
+      client.refreshSeconds ?? Number.parseInt(process.env.DASHBOARD_REFRESH_SECONDS ?? "15", 10)
+    ),
     mode: "sheet",
-    tileConfig:
-      client.tileConfig ??
-      normalizeMetricTileConfig(parseJsonValue(process.env.DASHBOARD_TILE_CONFIG)),
-    sheets: activeSheets,
+    tileConfig: client.tileConfig ?? FORM_CAMPAIGN_TILE_CONFIG,
+    sheets: [],
   }
+}
+
+function expandDashboardSheet(sheet: MasterSheet): DashboardSheetSource[] {
+  if (sheet.sheetName) {
+    return [{ ...sheet, role: inferSheetRole(sheet) }]
+  }
+
+  return [
+    {
+      ...sheet,
+      id: `${sheet.id}:media`,
+      name: `${sheet.name} - ${DEFAULT_MEDIA_TAB}`,
+      sheetName: DEFAULT_MEDIA_TAB,
+      type: sheet.type || "formulario",
+      mapper: sheet.mapper ?? "meta_v1",
+      role: "media",
+    },
+    {
+      ...sheet,
+      id: `${sheet.id}:media-fallback`,
+      name: `${sheet.name} - ${DEFAULT_MEDIA_FALLBACK_TAB}`,
+      sheetName: DEFAULT_MEDIA_FALLBACK_TAB,
+      type: sheet.type || "formulario",
+      mapper: sheet.mapper ?? "meta_v1",
+      role: "media",
+    },
+    {
+      ...sheet,
+      id: `${sheet.id}:leads`,
+      name: `${sheet.name} - ${DEFAULT_LEADS_TAB}`,
+      sheetName: DEFAULT_LEADS_TAB,
+      type: "leads",
+      mapper: joinMapperNames(sheet.mapper, "crm_v1"),
+      role: "leads",
+    },
+  ]
+}
+
+function inferSheetRole(sheet: DashboardSheetSource): "media" | "leads" {
+  const text = normalizeHeader(`${sheet.type} ${sheet.sheetName ?? ""} ${sheet.name}`)
+  return text.includes("lead") ? "leads" : "media"
+}
+
+function joinMapperNames(...values: Array<string | null | undefined>) {
+  return values.filter(Boolean).join(" ") || null
 }
 
 function parseUnifiedConfig(values: unknown[][]) {
@@ -241,6 +333,15 @@ function parseUnifiedConfig(values: unknown[][]) {
       rangeA1: parsedRange.rangeA1,
       type,
       mapper: readRecordValue(record, ["mapper", "mapeador"]),
+      role: inferSheetRole({
+        id: "",
+        name,
+        sheetId,
+        sheetName: explicitSheetName ?? parsedRange.sheetName,
+        rangeA1: parsedRange.rangeA1,
+        type,
+        mapper: null,
+      }),
       active: isRecordActive(record),
     })
   })
@@ -329,7 +430,7 @@ function parseSheets(values: unknown[][]): MasterSheet[] {
         "tab",
       ])
 
-      return {
+      const sheet: MasterSheet = {
         id: `${clientId}:${slugify(`${type}-${name}-${index + 1}`)}`,
         clientId,
         name,
@@ -339,6 +440,11 @@ function parseSheets(values: unknown[][]): MasterSheet[] {
         type,
         mapper: readRecordValue(record, ["mapper", "mapeador"]),
         active: isRecordActive(record),
+      }
+
+      return {
+        ...sheet,
+        role: inferSheetRole(sheet),
       }
     })
     .filter((sheet): sheet is MasterSheet => sheet !== null)
@@ -431,7 +537,7 @@ function emptyMasterAccessState(notice: string): DashboardAccessState {
 function toDashboardListItem(source: DashboardSource) {
   return {
     id: source.id,
-    name: source.clientName,
+    name: source.title,
     slug: source.clientSlug,
     role: source.role,
     title: source.title,
@@ -456,6 +562,13 @@ function clampRefreshSeconds(value: number) {
   }
 
   return Math.min(300, Math.max(5, value))
+}
+
+function getDefaultTileConfig() {
+  const configured = normalizeMetricTileConfig(
+    parseJsonValue(process.env.DASHBOARD_TILE_CONFIG)
+  )
+  return configured.length ? configured : FORM_CAMPAIGN_TILE_CONFIG
 }
 
 function normalizeOptionalTileConfig(value: string | null) {
@@ -528,5 +641,3 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
 }
-
-
