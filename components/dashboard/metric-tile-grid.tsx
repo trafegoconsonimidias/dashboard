@@ -1,42 +1,36 @@
-import { BarChart3Icon } from "lucide-react"
+import { GaugeIcon } from "lucide-react"
 
 import { formatMetric } from "@/lib/dashboard/format"
 import type { Scorecard } from "@/lib/dashboard/types"
 
 export function MetricTileGrid({ scorecards }: { scorecards: Scorecard[] }) {
   return (
-    <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {scorecards.map((scorecard) => (
-        <MetricTile key={scorecard.key} scorecard={scorecard} />
-      ))}
-    </div>
+    <section className="rounded-lg border bg-card text-card-foreground shadow-sm">
+      <div className="grid min-h-24 grid-cols-2 items-center gap-px overflow-hidden sm:grid-cols-3 lg:grid-cols-6">
+        <div className="flex h-full items-center justify-center bg-background p-4">
+          <div className="flex size-14 items-center justify-center rounded-lg bg-sky-400 text-white">
+            <GaugeIcon className="size-7" />
+          </div>
+        </div>
+        {scorecards.slice(0, 6).map((scorecard) => (
+          <MetricTile key={scorecard.key} scorecard={scorecard} />
+        ))}
+      </div>
+    </section>
   )
 }
 
 function MetricTile({ scorecard }: { scorecard: Scorecard }) {
   return (
     <div
-      className={[
-        "flex min-h-40 flex-col justify-between rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm",
-        scorecard.size === "wide" ? "xl:col-span-2" : "",
-      ].join(" ")}
+      className="flex h-full min-h-24 flex-col items-center justify-center bg-background px-4 py-3 text-center"
       title={scorecard.sourceHeader}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="line-clamp-2 break-words text-sm leading-5 text-muted-foreground">
-            {scorecard.label}
-          </p>
-          <p className="mt-3 break-words text-2xl font-semibold tracking-normal text-foreground sm:text-3xl">
-            {formatMetric(scorecard.value, scorecard.type)}
-          </p>
-        </div>
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground">
-          <BarChart3Icon className="size-4" />
-        </div>
-      </div>
-      <p className="mt-5 line-clamp-2 break-words text-xs text-muted-foreground">
-        {scorecard.hint}
+      <p className="line-clamp-1 text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+        {scorecard.label}
+      </p>
+      <p className="mt-1 break-words text-lg font-medium tracking-normal text-foreground lg:text-xl">
+        {formatMetric(scorecard.value, scorecard.type)}
       </p>
     </div>
   )

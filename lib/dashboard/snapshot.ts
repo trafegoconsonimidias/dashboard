@@ -173,19 +173,25 @@ function normalizeSheetTransform(
   }
 
   const leadColumns = findLeadColumns(transform.headers)
-  const dateColumns = findHeaderColumns(transform.headers, ["data de inscricao", "data inscrição"])
-  const campaignColumns = findHeaderColumns(transform.headers, ["campaign", "campanha"])
+  const dateColumns = findHeaderColumns(transform.headers, FORM_DATE_ALIASES)
+  const campaignColumns = findHeaderColumns(transform.headers, FORM_CAMPAIGN_ALIASES)
+  const adColumns = findHeaderColumns(transform.headers, FORM_AD_ALIASES)
+  const audienceColumns = findHeaderColumns(transform.headers, FORM_AUDIENCE_ALIASES)
+  const creativeColumns = findHeaderColumns(transform.headers, FORM_CREATIVE_ALIASES)
   const dataRows = matrix.slice(transform.headerRowIndex + 1)
 
   const rows = transform.rows.map((row, index) => {
     const rawRow = dataRows[index] ?? []
-    const hasContact = leadColumns.some((columnIndex) => hasCellValue(rawRow[columnIndex]))
+    const hasLeadSignal = leadColumns.some((columnIndex) => hasCellValue(rawRow[columnIndex]))
 
     return {
       ...row,
       date: row.date ?? readDateFallback(rawRow, dateColumns),
       campaignName: row.campaignName ?? readTextFallback(rawRow, campaignColumns),
-      leads: typeof row.leads === "number" ? row.leads : hasContact ? 1 : null,
+      adName: row.adName ?? readTextFallback(rawRow, adColumns),
+      audienceName: row.audienceName ?? readTextFallback(rawRow, audienceColumns),
+      creativeName: row.creativeName ?? readTextFallback(rawRow, creativeColumns),
+      leads: typeof row.leads === "number" ? row.leads : hasLeadSignal ? 1 : null,
     } satisfies CanonicalRow
   })
 
@@ -196,15 +202,69 @@ function normalizeSheetTransform(
   }
 }
 
+const FORM_LEAD_ALIASES = [
+  "email",
+  "e mail",
+  "e-mail",
+  "mail",
+  "seu email",
+  "seu melhor email",
+  "seu melhor e mail",
+  "seu melhor e-mail",
+  "telefone",
+  "fone",
+  "celular",
+  "whatsapp",
+  "whats",
+  "phone",
+  "mobile",
+  "nome",
+  "nome completo",
+  "full name",
+  "name",
+]
+
+const FORM_DATE_ALIASES = [
+  "data",
+  "date",
+  "data de inscricao",
+  "data inscricao",
+  "created time",
+  "created_time",
+]
+
+const FORM_CAMPAIGN_ALIASES = [
+  "campaign",
+  "campanha",
+  "campaign name",
+  "campaign_name",
+]
+
+const FORM_AD_ALIASES = [
+  "ad name",
+  "ad_name",
+  "anuncio",
+  "content",
+]
+
+const FORM_AUDIENCE_ALIASES = [
+  "publico",
+  "audience",
+  "adset name",
+  "adset_name",
+  "medium",
+]
+
+const FORM_CREATIVE_ALIASES = [
+  "criativo",
+  "criativo organico",
+  "term",
+  "form name",
+  "form_name",
+]
+
 function findLeadColumns(headers: string[]) {
-  return findHeaderColumns(headers, [
-    "email",
-    "e mail",
-    "telefone",
-    "phone",
-    "whatsapp",
-    "celular",
-  ])
+  return findHeaderColumns(headers, FORM_LEAD_ALIASES)
 }
 
 function findHeaderColumns(headers: string[], aliases: string[]) {
@@ -213,17 +273,35 @@ function findHeaderColumns(headers: string[], aliases: string[]) {
   return headers
     .map((header, index) => ({ header: normalizeHeader(header), index }))
     .filter(({ header }) =>
-      normalizedAliases.some((alias) => header === alias || header.includes(alias))
+      normalizedAliases.some((alias) => isHeaderAliasMatch(header, alias))
     )
     .map(({ index }) => index)
+}
+
+function isHeaderAliasMatch(header: string, alias: string) {
+  if (!header || !alias) return false
+  if (header === alias) return true
+
+  if (alias === "name" || alias === "nome") {
+    return false
+  }
+
+  return header.includes(alias)
 }
 
 function readDateFallback(row: unknown[], columns: number[]) {
   const value = readTextFallback(row, columns)
   if (!value) return null
 
-  const [day, month, year] = value.split(/[/-]/)
-  if (day && month && year && day.length <= 2) {
+  const isoLike = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})/.exec(value)
+  if (isoLike) {
+    const [, year, month, day] = isoLike
+    return `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`
+  }
+
+  const brLike = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/.exec(value)
+  if (brLike) {
+    const [, day, month, year] = brLike
     const normalizedYear = year.length === 2 ? `20${year}` : year
     return `${normalizedYear.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`
   }
@@ -241,36 +319,33 @@ function readTextFallback(row: unknown[], columns: number[]) {
 }
 
 function hasCellValue(value: unknown) {
-  return String(value ?? "").trim() !== ""
+  const text = String(value ?? "").trim()
+  return text !== "" && text !== "#REF!" && text !== "#VALUE!"
 }
-
 function collapseFallbackSheets(sheets: DashboardSheetSource[]) {
+  const generatedMedia = sheets.filter((sheet) => /:media-\d+$/.test(sheet.id))
+  const generatedLeads = sheets.filter((sheet) => /:leads-\d+$/.test(sheet.id))
+  const generatedIds = new Set(
+    [...generatedMedia, ...generatedLeads].map((sheet) => sheet.id)
+  )
   const groups: DashboardSheetSource[][] = []
-  const mediaFallbacks = sheets.filter((sheet) => sheet.id.endsWith(":media-fallback"))
-  const consumed = new Set<string>()
+
+  if (generatedMedia.length) {
+    groups.push(generatedMedia)
+  }
+
+  if (generatedLeads.length) {
+    groups.push(generatedLeads)
+  }
 
   for (const sheet of sheets) {
-    if (consumed.has(sheet.id) || sheet.id.endsWith(":media-fallback")) {
-      continue
+    if (!generatedIds.has(sheet.id)) {
+      groups.push([sheet])
     }
-
-    if (sheet.id.endsWith(":media")) {
-      const fallback = mediaFallbacks.find(
-        (candidate) => candidate.id === sheet.id.replace(/:media$/, ":media-fallback")
-      )
-      const group = fallback ? [sheet, fallback] : [sheet]
-      group.forEach((item) => consumed.add(item.id))
-      groups.push(group)
-      continue
-    }
-
-    consumed.add(sheet.id)
-    groups.push([sheet])
   }
 
   return groups
 }
-
 function combineTransforms(
   loadedSheets: LoadedDashboardSheet[]
 ): SheetTransformResult {

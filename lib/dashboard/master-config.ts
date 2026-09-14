@@ -14,9 +14,22 @@ const DEFAULT_CLIENTS_RANGE = "CLIENTES!A:Z"
 const DEFAULT_SHEETS_RANGE = "PLANILHAS!A:Z"
 const DEFAULT_MASTER_TEST_RANGE = "A:Z"
 const DEFAULT_DATA_RANGE = "A:Z"
-const DEFAULT_MEDIA_TAB = process.env.DASHBOARD_MEDIA_SHEET_NAME ?? "Meta Extract"
-const DEFAULT_MEDIA_FALLBACK_TAB = process.env.DASHBOARD_MEDIA_FALLBACK_SHEET_NAME ?? "Stract"
-const DEFAULT_LEADS_TAB = process.env.DASHBOARD_LEADS_SHEET_NAME ?? "Leads"
+const DEFAULT_MEDIA_TABS = uniqueStrings([
+  process.env.DASHBOARD_MEDIA_SHEET_NAME,
+  "Meta Extract",
+  "Stract",
+  "CAPTAÇÃO META - STRACT",
+  "CAPTACAO META - STRACT",
+  "CAPTAÇÃO GOOGLE - STRACT",
+  "CAPTACAO GOOGLE - STRACT",
+])
+const DEFAULT_LEADS_TABS = uniqueStrings([
+  process.env.DASHBOARD_LEADS_SHEET_NAME,
+  "Leads",
+  "LEADS",
+  "LEAD-HIAGO",
+  "FORMS",
+])
 
 const FORM_CAMPAIGN_TILE_CONFIG: MetricTileOverride[] = [
   { field: "spend", label: "Investimento", variant: "finance" },
@@ -205,36 +218,26 @@ function expandDashboardSheet(sheet: MasterSheet): DashboardSheetSource[] {
   }
 
   return [
-    {
+    ...DEFAULT_MEDIA_TABS.map((sheetName, index) => ({
       ...sheet,
-      id: `${sheet.id}:media`,
-      name: `${sheet.name} - ${DEFAULT_MEDIA_TAB}`,
-      sheetName: DEFAULT_MEDIA_TAB,
+      id: `${sheet.id}:media-${index + 1}`,
+      name: `${sheet.name} - ${sheetName}`,
+      sheetName,
       type: sheet.type || "formulario",
-      mapper: sheet.mapper ?? "meta_v1",
-      role: "media",
-    },
-    {
+      mapper: joinMapperNames(sheet.mapper, "formulario_v1", "meta_v1"),
+      role: "media" as const,
+    })),
+    ...DEFAULT_LEADS_TABS.map((sheetName, index) => ({
       ...sheet,
-      id: `${sheet.id}:media-fallback`,
-      name: `${sheet.name} - ${DEFAULT_MEDIA_FALLBACK_TAB}`,
-      sheetName: DEFAULT_MEDIA_FALLBACK_TAB,
-      type: sheet.type || "formulario",
-      mapper: sheet.mapper ?? "meta_v1",
-      role: "media",
-    },
-    {
-      ...sheet,
-      id: `${sheet.id}:leads`,
-      name: `${sheet.name} - ${DEFAULT_LEADS_TAB}`,
-      sheetName: DEFAULT_LEADS_TAB,
+      id: `${sheet.id}:leads-${index + 1}`,
+      name: `${sheet.name} - ${sheetName}`,
+      sheetName,
       type: "leads",
-      mapper: joinMapperNames(sheet.mapper, "crm_v1"),
-      role: "leads",
-    },
+      mapper: joinMapperNames(sheet.mapper, "formulario_v1", "crm_v1"),
+      role: "leads" as const,
+    })),
   ]
 }
-
 function inferSheetRole(sheet: DashboardSheetSource): "media" | "leads" {
   const text = normalizeHeader(`${sheet.type} ${sheet.sheetName ?? ""} ${sheet.name}`)
   return text.includes("lead") ? "leads" : "media"
@@ -634,6 +637,12 @@ function isRecordActive(record: Record<string, string>) {
 
 function cleanCell(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim()
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(values.filter((value): value is string => Boolean(value)))
+  )
 }
 
 function slugify(value: string) {
