@@ -108,27 +108,6 @@ export function DashboardClient({
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {dashboards.length > 1 ? (
-            <>
-              <label className="sr-only" htmlFor="client-dashboard">
-                Planilha
-              </label>
-              <select
-                id="client-dashboard"
-                value={selectedSlug ?? ""}
-                onChange={(event) => {
-                  router.push(`/dashboard?cliente=${encodeURIComponent(event.target.value)}`)
-                }}
-                className="h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              >
-                {dashboards.map((dashboard) => (
-                  <option key={dashboard.slug} value={dashboard.slug}>
-                    {dashboard.name}
-                  </option>
-                ))}
-              </select>
-            </>
-          ) : null}
           <Button onClick={refresh} disabled={isRefreshing || !selectedSlug}>
             {isRefreshing ? (
               <Loader2Icon className="animate-spin" />

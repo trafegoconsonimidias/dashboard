@@ -60,7 +60,8 @@ export function hasMasterDashboardConfig() {
 }
 
 export async function getMasterDashboardAccess(
-  accessId: string | undefined
+  accessId: string | undefined,
+  sheetSlug?: string
 ): Promise<DashboardAccessState> {
   const normalizedAccessId = accessId?.trim() ?? ""
 

@@ -63,6 +63,7 @@ export type DashboardSource = SheetRangeSource & {
   clientId: string
   clientName: string
   clientSlug: string
+  sheetSlug?: string | null
   role: DashboardRole
   title: string
   refreshSeconds: number
@@ -75,6 +76,8 @@ export type DashboardListItem = {
   id: string
   name: string
   slug: string
+  sheetSlug?: string
+  clientAccessId?: string
   role: DashboardRole
   title: string
   refreshSeconds: number

@@ -18,15 +18,15 @@ export class DashboardAccessError extends Error {
 }
 
 export async function getDashboardAccess(
-  preferredSlug?: string
+  preferredSlug?: string,
+  sheetSlug?: string
 ): Promise<DashboardAccessState> {
   if (hasMasterDashboardConfig()) {
-    return getMasterDashboardAccess(preferredSlug)
+    return getMasterDashboardAccess(preferredSlug, sheetSlug)
   }
 
   return getSingleSheetDashboardAccess(preferredSlug)
 }
-
 export async function getStrictDashboardSource(clientSlug: string) {
   const access = await getDashboardAccess(clientSlug)
 

@@ -17,6 +17,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
 import type {
@@ -39,6 +42,8 @@ export function DashboardSidebar({
   const activeDashboard =
     dashboards.find((dashboard) => dashboard.slug === activeDashboardSlug) ??
     dashboards[0]
+  const clientAccessId =
+    activeDashboard?.clientAccessId ?? activeDashboard?.slug.split("--")[0] ?? ""
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -60,16 +65,30 @@ export function DashboardSidebar({
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Planilha</SidebarGroupLabel>
+          <SidebarGroupLabel>{viewer.name}</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton isActive tooltip="Dashboard" render={<a href="/dashboard" />}>
+              <SidebarMenuButton isActive tooltip="Dashboard" render={<a href={`/dashboard/${clientAccessId}`} />}>
                 <LayoutDashboardIcon />
                 <span>Dashboard</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            {dashboards.length ? (
+              <SidebarMenuSub>
+                {dashboards.map((dashboard) => (
+                  <SidebarMenuSubItem key={dashboard.slug}>
+                    <SidebarMenuSubButton
+                      isActive={dashboard.slug === activeDashboardSlug}
+                      render={<a href={buildSheetHref(clientAccessId, dashboard)} />}
+                    >
+                      <span>{cleanDashboardName(dashboard.name)}</span>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                ))}
+              </SidebarMenuSub>
+            ) : null}
             <SidebarMenuItem>
-              <SidebarMenuButton tooltip="Fonte de dados" render={<a href="/dashboard" />}>
+              <SidebarMenuButton tooltip="Fonte de dados" render={<a href={`/dashboard/${clientAccessId}`} />}>
                 <DatabaseIcon />
                 <span>Google Sheets</span>
               </SidebarMenuButton>
@@ -87,7 +106,7 @@ export function DashboardSidebar({
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">
-                  {activeDashboard?.name ?? viewer.name}
+                  {cleanDashboardName(activeDashboard?.name ?? viewer.name)}
                 </span>
                 <span className="truncate text-xs">{viewer.email}</span>
               </div>
@@ -98,4 +117,18 @@ export function DashboardSidebar({
       <SidebarRail />
     </Sidebar>
   )
+}
+
+function buildSheetHref(clientAccessId: string, dashboard: DashboardListItem) {
+  const sheet = dashboard.sheetSlug ?? dashboard.slug.split("--").slice(1).join("--")
+  const base = `/dashboard/${encodeURIComponent(clientAccessId)}`
+
+  return sheet ? `${base}?sheet=${encodeURIComponent(sheet)}` : base
+}
+
+function cleanDashboardName(value: string) {
+  return value
+    .replace(/^Dashboard\s+/i, "")
+    .replace(/\s+-\s+SET\d+\s+Planilha Auxiliar Dashboard$/i, "")
+    .replace(/\s+Planilha Auxiliar Dashboard$/i, "")
 }

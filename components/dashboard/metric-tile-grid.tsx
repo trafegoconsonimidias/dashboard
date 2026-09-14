@@ -1,5 +1,3 @@
-import { GaugeIcon } from "lucide-react"
-
 import { formatMetric } from "@/lib/dashboard/format"
 import type { Scorecard } from "@/lib/dashboard/types"
 
@@ -7,11 +5,6 @@ export function MetricTileGrid({ scorecards }: { scorecards: Scorecard[] }) {
   return (
     <section className="rounded-lg border bg-card text-card-foreground shadow-sm">
       <div className="grid min-h-24 grid-cols-2 items-center gap-px overflow-hidden sm:grid-cols-3 lg:grid-cols-6">
-        <div className="flex h-full items-center justify-center bg-background p-4">
-          <div className="flex size-14 items-center justify-center rounded-lg bg-sky-400 text-white">
-            <GaugeIcon className="size-7" />
-          </div>
-        </div>
         {scorecards.slice(0, 6).map((scorecard) => (
           <MetricTile key={scorecard.key} scorecard={scorecard} />
         ))}
